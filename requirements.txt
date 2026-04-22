@@ -1,0 +1,30 @@
+# ============================================================
+# Sinhala-Tamil Pivot MT — PoC Dependencies
+# Python 3.10+
+# ============================================================
+
+# ── Core ML / NLP ───────────────────────────────────────────
+torch>=2.0.0
+transformers>=4.38.0
+sentencepiece>=0.1.99
+sentence-transformers>=2.6.0   # for LaBSE filtering
+datasets>=2.18.0               # HuggingFace datasets (FLORES-200)
+accelerate>=0.27.0             # required by transformers Trainer
+
+# ── Evaluation ──────────────────────────────────────────────
+sacrebleu>=2.3.1               # BLEU + chrF (sacreBLEU standard)
+
+# ── Data Processing ─────────────────────────────────────────
+pandas>=2.0.0
+numpy>=1.24.0
+unicodedata2>=15.0.0           # robust Unicode NFC normalisation
+
+# ── Notebook ────────────────────────────────────────────────
+jupyter>=1.0.0
+ipywidgets>=8.0.0
+matplotlib>=3.7.0              # BLEU/chrF comparison plots
+tqdm>=4.66.0
+
+# ── Utilities ───────────────────────────────────────────────
+requests>=2.31.0
+python-dotenv>=1.0.0
