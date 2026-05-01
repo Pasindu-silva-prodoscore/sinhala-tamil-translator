@@ -73,95 +73,58 @@ def translate_si_en(
 # Step 2: English → Tamil  (IndicTrans2)
 # ---------------------------------------------------------------------------
 
-EN_TA_MODEL = "ai4bharat/indictrans2-en-indic-1B"
-SRC_LANG = "eng_Latn"
-TGT_LANG = "tam_Taml"
+EN_TA_MODEL = "facebook/nllb-200-distilled-600M"
+NLLB_SRC_LANG = "eng_Latn"
+NLLB_TGT_LANG = "tam_Taml"
 
 
 def load_en_ta(device: str = "cpu"):
-    """
-    Load IndicTrans2 model and tokenizer, plus IndicProcessor for pre/post-processing.
-
-    IndicProcessor handles:
-      - Unicode normalisation for Indic scripts
-      - Inserting internal language tags (NOT a simple string prefix)
-      - Postprocessing entity placeholders back to surface forms
-
-    Reference: https://github.com/AI4Bharat/IndicTrans2
-    Install:   pip install IndicTransToolkit
-    """
-    try:
-        from IndicTransToolkit.processor import IndicProcessor
-    except ImportError as exc:
-        raise ImportError(
-            "IndicTransToolkit is required for IndicTrans2 inference.\n"
-            "Install with: pip install IndicTransToolkit"
-        ) from exc
-
     print(f"Loading En→Ta model ({EN_TA_MODEL}) ...")
-    ip = IndicProcessor(inference=True)
-    tokenizer = AutoTokenizer.from_pretrained(EN_TA_MODEL, trust_remote_code=True)
-    model = AutoModelForSeq2SeqLM.from_pretrained(EN_TA_MODEL, trust_remote_code=True).to(device)
+    tokenizer = AutoTokenizer.from_pretrained(EN_TA_MODEL)
+    model = AutoModelForSeq2SeqLM.from_pretrained(EN_TA_MODEL).to(device)
     model.eval()
-    return ip, tokenizer, model
+    return tokenizer, model
 
 
 def translate_en_ta(
     sentences: list[str],
-    ip,
     tokenizer,
     model,
     device: str = "cpu",
     batch_size: int = 8,
 ) -> list[str]:
-    """
-    Translate English → Tamil using IndicTrans2.
-
-    IndicTrans2 does NOT use a simple language prefix in the raw input.
-    Language codes are embedded internally by IndicProcessor.preprocess_batch(),
-    which also handles normalisation and entity placeholder substitution.
-    The output must be postprocessed with ip.postprocess_batch() to restore
-    those placeholders.
-
-    See: https://github.com/AI4Bharat/IndicTrans2/blob/main/huggingface_interface/example.py
-    """
     results = []
     for i in range(0, len(sentences), batch_size):
         batch = sentences[i : i + batch_size]
 
-        preprocessed = ip.preprocess_batch(batch, src_lang=SRC_LANG, tgt_lang=TGT_LANG)
-
         inputs = tokenizer(
-            preprocessed,
-            truncation=True,
-            padding="longest",
+            batch,
             return_tensors="pt",
-            return_attention_mask=True,
+            padding=True,
+            truncation=True,
+            max_length=256,
+            src_lang=NLLB_SRC_LANG,
         )
         inputs = {k: v.to(device) for k, v in inputs.items()}
 
+        tgt_lang_id = tokenizer.convert_tokens_to_ids(NLLB_TGT_LANG)
         with torch.no_grad():
             generated_tokens = model.generate(
                 **inputs,
-                use_cache=True,
-                min_length=0,
-                max_length=256,
+                forced_bos_token_id=tgt_lang_id,
                 num_beams=5,
-                num_return_sequences=1,
+                max_new_tokens=256,
             )
 
-        decoded = tokenizer.batch_decode(
-            generated_tokens,
-            skip_special_tokens=True,
-            clean_up_tokenization_spaces=True,
-        )
-
-        batch_translations = ip.postprocess_batch(decoded, lang=TGT_LANG)
-        results.extend(batch_translations)
+        decoded = tokenizer.batch_decode(generated_tokens, skip_special_tokens=True)
+        results.extend(decoded)
 
         del inputs, generated_tokens
         if device == "cuda":
             torch.cuda.empty_cache()
+
+        print(f"  En→Ta: {min(i + batch_size, len(sentences))}/{len(sentences)}")
+    return results
 
         print(f"  En→Ta: {min(i + batch_size, len(sentences))}/{len(sentences)}")
     return results
@@ -190,8 +153,8 @@ def run_cascade(
     if device == "cuda":
         torch.cuda.empty_cache()
 
-    en_ta_ip, en_ta_tok, en_ta_model = load_en_ta(device)
-    ta_sentences = translate_en_ta(en_sentences, en_ta_ip, en_ta_tok, en_ta_model, device, batch_size_en_ta)
+    en_ta_tok, en_ta_model = load_en_ta(device)
+    ta_sentences = translate_en_ta(en_sentences, en_ta_tok, en_ta_model, device, batch_size_en_ta)
 
     return en_sentences, ta_sentences
 
