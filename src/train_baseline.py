@@ -292,6 +292,44 @@ def greedy_translate(
 
 
 # ---------------------------------------------------------------------------
+# Hypothesis generation
+# ---------------------------------------------------------------------------
+
+def generate_hypothesis(
+    model: BaselineTransformer,
+    test_si_path: Path,
+    si_spm_path: Path,
+    ta_spm_path: Path,
+    out_path: Path,
+    device: torch.device,
+) -> None:
+    import sentencepiece as spm
+
+    si_sp = spm.SentencePieceProcessor()
+    si_sp.load(str(si_spm_path))
+    ta_sp = spm.SentencePieceProcessor()
+    ta_sp.load(str(ta_spm_path))
+    ta_vocab = build_vocab_from_spm_vocab(ta_spm_path)
+    id_to_piece = {v: k for k, v in ta_vocab.items()}
+
+    si_vocab = build_vocab_from_spm_vocab(si_spm_path)
+    test_sentences = test_si_path.read_text(encoding="utf-8").splitlines()
+
+    hypotheses: list[str] = []
+    for sent in test_sentences:
+        pieces = si_sp.encode(sent, out_type=str)
+        token_ids = [si_vocab.get(p, si_vocab.get("<unk>", 0)) for p in pieces]
+        generated_ids = greedy_translate(model, token_ids, bos_id=1, eos_id=2, device=device)
+        decoded_pieces = [
+            id_to_piece.get(i, "<unk>") for i in generated_ids if i not in (1, 2, 3)
+        ]
+        hypotheses.append(ta_sp.decode(decoded_pieces))
+
+    out_path.write_text("\n".join(hypotheses), encoding="utf-8")
+    print(f"  Wrote {len(hypotheses)} hypotheses → {out_path}")
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -306,6 +344,7 @@ def main() -> None:
     parser.add_argument("--batch-size", type=int, default=16)
     parser.add_argument("--d-model", type=int, default=512)
     parser.add_argument("--warmup-steps", type=int, default=400)
+    parser.add_argument("--test-si", default=None, help="Sinhala test file for hypothesis generation")
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -369,6 +408,17 @@ def main() -> None:
     (out_dir / "meta.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
     print(f"  Saved model → {out_dir}/model.pt")
     print(f"  Saved meta  → {out_dir}/meta.json")
+
+    if args.test_si:
+        print("Generating hypotheses on test set ...")
+        generate_hypothesis(
+            model,
+            test_si_path=Path(args.test_si),
+            si_spm_path=Path(args.si_spm),
+            ta_spm_path=Path(args.ta_spm),
+            out_path=out_dir / "hypothesis.ta",
+            device=device,
+        )
 
 
 if __name__ == "__main__":
