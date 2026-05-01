@@ -5,7 +5,7 @@ cascade_pivot.py
 Phase 4 — Cascade pivot translation pipeline: Sinhala → English → Tamil.
 
 Architecture (Wu & Wang 2009, sentence-cascade variant):
-  Step 1  Si → En   Helsinki-NLP/opus-mt-si-en  (HuggingFace, pretrained)
+  Step 1  Si → En   Helsinki-NLP/opus-mt-inc-en  (HuggingFace, Indic→English multilingual)
   Step 2  En → Ta   ai4bharat/indictrans2-en-indic-1B  (HuggingFace, pretrained)
 
 For the PoC both models are used inference-only (no fine-tuning).
@@ -37,7 +37,8 @@ from transformers import MarianMTModel, MarianTokenizer, AutoModelForSeq2SeqLM, 
 # Step 1: Sinhala → English
 # ---------------------------------------------------------------------------
 
-SI_EN_MODEL = "Helsinki-NLP/opus-mt-si-en"
+SI_EN_MODEL = "Helsinki-NLP/opus-mt-inc-en"
+SI_LANG_TAG = ">>sin<<"
 
 
 def load_si_en(device: str = "cpu"):
@@ -57,7 +58,7 @@ def translate_si_en(
 ) -> list[str]:
     results = []
     for i in range(0, len(sentences), batch_size):
-        batch = sentences[i : i + batch_size]
+        batch = [f"{SI_LANG_TAG} {s}" for s in sentences[i : i + batch_size]]
         inputs = tokenizer(batch, return_tensors="pt", padding=True, truncation=True, max_length=256)
         inputs = {k: v.to(device) for k, v in inputs.items()}
         with torch.no_grad():
